@@ -1,4 +1,6 @@
 ![beepy demo animation](data/beepydemo.gif)
+
+
 DESCRIPTION
 ===========
 Installs a DirectFB toolchain for the beepy open hardware platform described here:
