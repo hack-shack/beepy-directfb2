@@ -61,15 +61,13 @@ FULL SETUP (headless over SSH)
   * cd beepy-directfb2
   * python build-sdk.py
 
-Don't run install-sharp-driver.py. The build-sdk script will obtain its dependencies, then do this for you.
-
 RUNNING EXAMPLES
 ===========================================================
 Currently, you must run examples as root.
 
   * cd ~/beepy-directfb2
   * sudo su
-  * export DFBARGS="system=fbdev,fbdev=/dev/fb1"
+  * export DFBARGS="system=fbdev,fbdev=/dev/fb1,graphics-vt"
   * LD_LIBRARY_PATH=/usr/local/lib/arm-linux-gnueabihf/;export LD_LIBRARY_PATH
 
 Now you can run examples. Quit them with ctrl-C. Remember, you will need to first set the 2 environmental variables above in your session before running them.
@@ -85,12 +83,15 @@ Shows a quick animation, then quits after a few seconds:
   * /usr/local/bin/df_pss
 
 Displays keyboard and mouse input. Good for testing the beepy hardware.
+(Note: beepy internal touchpad not working at this time.)
   * /usr/local/bin/df_input
 
 A starfield controlled by the mouse. Good way to test if your touchpad is working.
+(Note: beepy internal touchpad not working at this time.)
   * /usr/local/bin/df_spacedream
 
 Shows a chessboard texture. It can be moved around by clicking and dragging on the touchpad.
+(Note: beepy internal touchpad not working at this time.)
   * /usr/local/bin/df_texture
 
 Displays a GUI for RGB slider adjustment. Does not affect beepy RGB LED.
@@ -102,3 +103,7 @@ Image viewer (must specify an image file - note you must replace the home direct
 
 Video player (must specify a video file)
   * /usr/local/bin/df_video_sample
+
+ERRATA
+===========================================================
+beepy internal touchpad is not working at this time. This script uses ardangelo's fork of the beepy keyboard driver, which has more features but does not compile with touchpad support. I made this tradeoff in the interest of rapid development.

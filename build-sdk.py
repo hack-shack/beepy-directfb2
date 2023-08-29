@@ -162,10 +162,10 @@ def download_source(url,download_dir_name,desc):
             print("ERROR: download_source: Error creating source directory at: " + dest_dir)
             print("ERROR: Try manually deleting it, or checking permissions.")
             raise
-        print("INFO : download_source: Downloading via shallow git clone from: " + url)
+        print("INFO : download_source: Downloading via full git clone from: " + url)
         # TODO: Check it's created successfully.
         try:
-            git ("clone", "--depth", "1", url, dest_dir)
+            git ("clone", url, dest_dir)
         except:
             print("ERROR: Issue cloning the git repo. Try manually cloning it via: git clone " + url + " " + dest_dir)
             raise
@@ -219,10 +219,15 @@ def build_rp2040_firmware():
         shutil.copy(os.path.join(C_BUILDDIR,"app/i2c_puppet.uf2"), os.path.join(SRC_DIR,"rp2040-firmware.uf2"))
     except:
         print("ERROR: Problem copying built RP2040 firmware UF2 file to: " + str(os.path.join(SRC_DIR,"rp2040-firmware.uf2")))
+    try:
+        print("INFO : Copying RP2040 firmware to: " + str(os.path.join(SRC_DIR,"rp2040-firmware.elf")))
+        shutil.copy(os.path.join(C_BUILDDIR,"app/i2c_puppet.elf"), os.path.join(SRC_DIR,"rp2040-firmware.elf"))
+    except:
+        print("ERROR: Problem copying built RP2040 firmware ELF file to: " + str(os.path.join(SRC_DIR,"rp2040-firmware.elf")))
     
-    instructions = ["RP2040 firmware has been built and copied to:\n",
+    instructions_uf2 = ["RP2040 firmware has been built and copied to:\n",
                     os.path.join(SRC_DIR,"rp2040-firmware.uf2"),
-                    "It will need to be manually installed as follows:\n",
+                    "\nIt will need to be manually installed as follows:\n",
                     "  * Copy this UF2 file to a host computer.\n",
                     "  * Shut down the beepy, then turn its power switch off, to the left.\n",
                     "  * Connect beepy to host computer using USB port on bottom of beepy.\n",
@@ -231,12 +236,28 @@ def build_rp2040_firmware():
                     "  * In bootloader mode, RGB LED is lit.\n",
                     "  * RP2040 will mount as a disk on your computer.\n",
                     "  * Drag UF2 file onto the disk. beepy will update and reboot.\n"]
+    instructions_elf = ["RP2040 firmware has been built and copied to:\n",
+                    os.path.join(SRC_DIR,"rp2040-firmware.elf"),
+                    "\nThis firmware can be installed via OpenOCD after jumpering\n",
+                    "the first and second pads across J45 (SWCLK, SWDIO) on the beepy.\n",
+                    "See data/beepy-j45.png for a diagram.\n",
+                    "Once you have jumpered the pads:\n",
+                    "$ sudo apt install -y openocd\n",
+                    "$ sudo openocd -f interface/raspberrypi-native.cfg -f target/rp2040.cfg -c 'transport select swd' -c 'adapter gpio swdio 24' -c 'adapter gpio swclk 25' -c 'program rp2040-firmware.elf verify reset exit'\n"]
     try:
         print("INFO : Writing RP2040 flashing instructions to: " + str(os.path.join(SRC_DIR,"rp2040-instructions.txt")))
         with open(os.path.join(SRC_DIR,"rp2040-instructions.txt"),mode='w') as f:
             f.seek(0)     # to be 100% sure
             f.truncate()  # to be 100% sure
-            for instruction in instructions:
+            f.write("You have 2 options to flash the RP2040 firmware. Choose one:\n")
+            f.write("INSTRUCTIONS FOR USB FLASHING\n")
+            f.write("-----------------------------\n")
+            for instruction in instructions_uf2:
+                f.write(instruction)
+            f.write("\n")
+            f.write("INSTRUCTIONS FOR ON-DEVICE FLASHING\n")
+            f.write("-----------------------------------\n")
+            for instruction in instructions_elf:
                 f.write(instruction)
     except:
         print("INFO : Problem writing to : " + str(os.path.join(SRC_DIR,"rp2040-instructions.txt")))
@@ -244,8 +265,9 @@ def build_rp2040_firmware():
 # Install Sharp DRM driver
 # ------------------------
 def install_sharp_drm_driver():
-    os.chdir(os.path.join(SCRIPT_DIR))
-    sudo_python(os.path.join(SCRIPT_DIR,"install-sharp-driver.py"))
+    os.chdir(os.path.join(SRC_DIR,"sharp-drm-driver"))
+    make()
+    sudo_make("install")
 
 # Install keyboard driver
 # -----------------------
@@ -253,11 +275,16 @@ def install_keyboard_driver():
     print("INFO : Installing i2c-tools for keyboard diagnostics.")
     sudo_apt("install","-y","i2c-tools")
     print("INFO : Installing keyboard driver.")
-    DRIVERDIR = os.path.join(SRC_DIR,"bbqX0kbd_driver")
+    DRIVERDIR = os.path.join(SRC_DIR,"beepberry-keyboard-driver")
     os.chdir(DRIVERDIR)
-    # installer.sh doesn't accept arguments when used with subprocess, so we have to use os.system
-    command_to_run = DRIVERDIR + '/installer.sh --BBQX0KBD_TYPE BBQ20KBD_PMOD --BBQ20KBD_TRACKPAD_USE BBQ20KBD_TRACKPAD_AS_MOUSE --BBQX0KBD_INT BBQX0KBD_USE_INT --BBQX0KBD_INT_PIN 4'
-    os.system(command_to_run)
+    try:
+        make()
+    except:
+        print("WARN : Looks like the keyboard driver is already built.")
+    try:
+        sudo_make("install")
+    except:
+        print("WARN : Looks like the keyboard driver is already installed.")
 
 # Install build tools
 # ------------------------------------
@@ -303,21 +330,58 @@ def download_sources():
     print("INFO : download_sources: If a source folder already exists, it will be untouched.")
     print("INFO : download_sources: To redownload source or build clean, delete its directory.")
     print("INFO : download_sources: ----------------------------------------------------------")
+
     download_source("https://github.com/ardangelo/beepberry-rp2040","beepberry-rp2040","Beepy RP2040 firmware")
-    # TODO: replace SQFMI kbd driver with ardangelo fork for integration with display/rp2040 drivers
-    #download_source("https://github.com/ardangelo/beepberry-keyboard-driver","beepberry-keyboard-driver","BBQ20 keyboard driver")
-    download_source("https://github.com/sqfmi/bbqX0kbd_driver","bbqX0kbd_driver","BBQ20 keyboard driver")
+    os.chdir(os.path.join(SRC_DIR,"beepberry-rp2040"))
+    git("checkout","d1cbd6335ee82afbb73f8ddf16954193380dc602")  # 2023-08-13
+
+    download_source("https://github.com/ardangelo/beepberry-keyboard-driver","beepberry-keyboard-driver","BBQ20 keyboard driver")
+    os.chdir(os.path.join(SRC_DIR,"beepberry-keyboard-driver"))
+    git("checkout","9a755c0c4f1ac2d025a7f879d9132335420d235f")  # 2023-08-21
+
     download_source("https://github.com/ardangelo/sharp-drm-driver","sharp-drm-driver","Sharp Memory LCD DRM framebuffer driver")
+    os.chdir(os.path.join(SRC_DIR,"sharp-drm-driver"))
+    git("checkout","8bdc22653f0555b286c014dbb95bc8064f9693c4")  # 2023-08-21
+
     download_source("https://github.com/deniskropp/flux","flux","Flux library for DirectFB2")
+    os.chdir(os.path.join(SRC_DIR,"flux"))
+    git("checkout","10ad2ebc78b396032714b839f200848ea0dd9503")  # 2022-04-05
+    
     download_source("https://github.com/directfb2/FusionSound2", "FusionSound2", "FusionSound2 library for DirectFB2 - optional")
+    os.chdir(os.path.join(SRC_DIR,"FusionSound2"))
+    git("checkout","7a98d790c0148a6135f82d8fcbe4603cd57b34df")  # 2023-03-13
+
     download_source("https://github.com/directfb2/DirectFB2", "DirectFB2", "DirectFB2 library")
+    os.chdir(os.path.join(SRC_DIR,"DirectFB2"))
+    git("checkout","27dbab6d58662cbe7dfbb54315dcfc0b459af98f")  # 2023-07-03
+
     download_source("https://github.com/directfb2/directfb-csource", "directfb-csource", "/DirectFB2 C source")
+    os.chdir(os.path.join(SRC_DIR,"directfb-csource"))
+    git("checkout","2758dee7937e8850d6c8105bd6ef1db06c86064f")  # 2023-06-07
+
     download_source("https://github.com/directfb2/DirectFB-examples", "DirectFB-examples", "DirectFB2 examples")
+    os.chdir(os.path.join(SRC_DIR,"DirectFB-examples"))
+    git("checkout","35c1fc24beb904074f4b2e535ed408a590467519")  # 2023-06-17
+
     download_source("https://github.com/directfb2/DirectFB2-media", "DirectFB2-media", "DirectFB2 image handlers: JPG, PNG, etc.")
+    os.chdir(os.path.join(SRC_DIR,"DirectFB2-media"))
+    git("checkout","c21e39a782cc8349eec420c407af5e01111f38fe")  # 2023-07-04
+
     download_source("https://github.com/directfb2/DirectFB-media-samples", "DirectFB-media-samples", "DirectFB media samples")
+    os.chdir(os.path.join(SRC_DIR,"DirectFB-media-samples"))
+    git("checkout","9985f148542441212dd2178131a82629984fabf4")  # 2023-06-23
+
     download_source("https://github.com/directfb2/LiTE", "LiTE", "LiTE GUI library for DirectFB2")
+    os.chdir(os.path.join(SRC_DIR,"LiTE"))
+    git("checkout","486c0878e99f6a3f5a805ac63fc8fb27987d3cb6")  # 2023-06-12
+
     download_source("https://github.com/directfb2/LiTE-examples", "LiTE-examples", "LiTE GUI examples")
+    os.chdir(os.path.join(SRC_DIR,"LiTE-examples"))
+    git("checkout","9f88d75da2a965b5f1e002485a7695787624345f")  # 2023-06-12
+
     download_source("https://github.com/directfb2/DFBTerm", "DFBTerm", "DFBTerm terminal emulator")
+    os.chdir(os.path.join(SRC_DIR,"DFBTerm"))
+    git("checkout","c6e3d58e7b3a1a789bde9afd172d143a5610a313")  # 2022-09-17
 
 # Build and install fluxcomp, an interface compiler for DirectFB
 # --------------------------------------------------------------
@@ -476,16 +540,27 @@ def buildinstall_fusionsound2():
     meson("compile","-C",C_BUILDDIR)
     sudo_meson("install","-C",C_BUILDDIR)
 
+# INFORMATIONAL FUNCTIONS
+# =========================================================
+# Beginning-of-build info for the user
+def info_begin():
+    print("INFO : ------------------------------------------------------")
+    print("INFO : build-sdk must be run on a fresh, new installation of")
+    print("INFO : Raspberry Pi OS. This provides a known-good baseline.")
+    print("INFO : Installing it on a 'dirty' OS will break the script.")
+    print("INFO : ------------------------------------------------------")
+
 # End-of-build information for the user
 # -------------------------------------
-def finish():
+def info_finish():
     print("INFO : -------------------------------------------------------")
     print("INFO : Build process complete. Reboot before testing examples.")
     print("INFO : -------------------------------------------------------")
     print("INFO : How to flash new RP2040 firmware:")
     print("INFO : " + str(os.path.join(SRC_DIR,"rp2040-instructions.txt")))
-    print("INFO : RP2040 firmware file should be here:")
+    print("INFO : RP2040 firmware UF2 and ELF files should be here:")
     print("INFO : " + str(os.path.join(SRC_DIR,"rp2040-firmware.uf2")))
+    print("INFO : " + str(os.path.join(SRC_DIR,"rp2040-firmware.elf")))
     print("INFO : ------------------------------------------")
 
 
@@ -497,14 +572,14 @@ def main():
  
     # 1ST HALF (getting a working beepy, with text console on the LCD, and keyboard support)
     # ------------------------------------------------------------------------------------------
+    info_begin()
     configure_raspi_basics()
     create_src_dir()
     download_sources()
     install_apt_dependencies()
     build_rp2040_firmware()
     install_sharp_drm_driver()
-    install_keyboard_driver()  # TODO: Non-breaking: appends to files in /boot when run repeatedly
-    # TODO : check if sharp/kbd modules are, or can be, loaded - did we buildinstall correctly?
+    install_keyboard_driver()
 
     # 2ND HALF (Installing DirectFB onto the beepy)
     # -------------------------------------------------
@@ -522,9 +597,9 @@ def main():
     buildinstall_directfb_examples()
     buildinstall_lite_examples()
     buildinstall_dfbterm()
-    finish()
-
+    info_finish()
     #sudo_reboot()  # to activate keyboard and Memory LCD
 
 if __name__=="__main__":
     main()
+
